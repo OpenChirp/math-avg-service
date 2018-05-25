@@ -1,17 +1,15 @@
 // Craig Hesling
-// November 26, 2017
+// May 25, 2018
 //
-// This is an example OpenChirp service that tracks the number of publications
-// to the rawrx and rawtx topics and publishes the count to the
-// rawrxcount and rawtxcount transducer topics.
-// This example demonstates argument/environment variable parsing,
-// setting up the service client, and handling device transducer data.
+// This is a simple OpenChirp service that output the running diff of the data.
 package main
 
 import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/openchirp/framework"
@@ -24,53 +22,98 @@ const (
 )
 
 const (
-	// Set this value to true to have the service publish a service status of
-	// "Running" each time it receives a device update event
-	//
-	// This could be used as a service alive pulse if enabled
-	// Otherwise, the service status will indicate "Started" at the time the
-	// service "Started" the client
-	runningStatus = true
+	configKeyInputTopics  = "InputTopics"
+	configKeyOutputTopics = "OutputTopics"
+	configWindowsSizes    = "WindowSizes"
 )
 
 const (
-	// The subscription key used to identify a messages types
-	rawRxKey = 0
-	rawTxKey = 1
+	defaultWindowSize        = 2
+	defaultOutputTopicSuffix = "_avg"
 )
 
-// Device holds any data you want to keep around for a specific
-// device that has linked your service.
-//
-// In this example, we will keep track of the rawrx and rawtx message counts
+const (
+	// Set this value to true to have the service publish a service status of
+	// "Running" each time it receives a device update event
+	runningStatus = true
+)
+
+func commaList(str string) []string {
+	nospacestr := strings.Replace(str, " ", "", -1)
+	elements := strings.Split(nospacestr, ",")
+	if len(elements) == 1 && len(elements[0]) == 0 {
+		return []string{}
+	}
+	return elements
+}
+
+// Device holds the device specific last values and target topics for the difference.
 type Device struct {
-	rawRxCount int
-	rawTxCount int
+	outtopics  []string
+	lastvalues [][]float64
+	nextindex  []int
 }
 
 // NewDevice is called by the framework when a new device has been linked.
 func NewDevice() framework.Device {
 	d := new(Device)
-	// The following initialization is redundant in Go
-	d.rawRxCount = 0
-	d.rawTxCount = 0
-	// Change type to the Device interface
 	return framework.Device(d)
+}
+
+func (d *Device) addLastValue(topicIndex int, value float64) {
+	nextIndex := d.nextindex[topicIndex]
+	d.lastvalues[topicIndex][nextIndex] = value
+	d.nextindex[topicIndex] = (nextIndex + 1) % len(d.lastvalues[topicIndex])
+}
+
+func (d *Device) calculateAverage(topicIndex int) float64 {
+	var sum float64
+	for _, val := range d.lastvalues[topicIndex] {
+		sum += val
+	}
+	return sum / float64(len(d.lastvalues[topicIndex]))
 }
 
 // ProcessLink is called once, during the initial setup of a
 // device, and is provided the service config for the linking device.
 func (d *Device) ProcessLink(ctrl *framework.DeviceControl) string {
-	// This simply sets up console logging for our program.
-	// Any time this logitem is use to print messages,
-	// the key/value string "deviceid=<device_id>" is prepended to the line.
 	logitem := log.WithField("deviceid", ctrl.Id())
 	logitem.Debug("Linking with config:", ctrl.Config())
 
-	// Subscribe to subtopic "transducer/rawrx"
-	ctrl.Subscribe(framework.TransducerPrefix+"/rawrx", rawRxKey)
-	// Subscribe to subtopic "transducer/rawtx"
-	ctrl.Subscribe(framework.TransducerPrefix+"/rawtx", rawTxKey)
+	// Allows space in comma seperated list
+	inputTopics := commaList(ctrl.Config()[configKeyInputTopics])
+	outputTopics := commaList(ctrl.Config()[configKeyOutputTopics])
+	windowSizes := commaList(ctrl.Config()[configWindowsSizes])
+
+	d.outtopics = make([]string, len(inputTopics))
+	d.lastvalues = make([][]float64, len(inputTopics))
+	d.nextindex = make([]int, len(inputTopics))
+
+	for i, intopic := range inputTopics {
+		var outtopic string
+		if i < len(outputTopics) {
+			outtopic = outputTopics[i]
+		} else {
+			// if no putput topic specified, simply append a _diff to the topic
+			outtopic = intopic + defaultOutputTopicSuffix
+		}
+		d.outtopics[i] = outtopic
+
+		var winsize int = defaultWindowSize
+		if i < len(windowSizes) {
+			val, err := strconv.ParseInt(windowSizes[i], 10, 32)
+			if err != nil {
+				logitem.Warnf("Failed to parse WindowSize. Given \"%s\".", windowSizes[i])
+				return "Failed to parse WindowSize"
+			}
+			if val > 0 {
+				winsize = int(val)
+			}
+		}
+		d.lastvalues[i] = make([]float64, winsize)
+
+		ctrl.Subscribe(framework.TransducerPrefix+"/"+intopic, i)
+	}
 
 	logitem.Debug("Finished Linking")
 
@@ -83,53 +126,35 @@ func (d *Device) ProcessLink(ctrl *framework.DeviceControl) string {
 func (d *Device) ProcessUnlink(ctrl *framework.DeviceControl) {
 	logitem := log.WithField("deviceid", ctrl.Id())
 	logitem.Debug("Unlinked:")
-
-	// The framework already handles unsubscribing from all
-	// Device associted subtopics, so we don't need to call
-	// ctrl.Unsubscribe.
 }
 
-// ProcessConfigChange is intended to handle a service config updates.
-// If your program does not need to handle incremental config changes,
-// simply return false, to indicate the config update was unhandled.
-// The framework will then automatically issue a ProcessUnlink and then a
-// ProcessLink, instead. Note, NewDevice is not called.
-//
-// For more information about this or other Device interface functions,
-// please see https://godoc.org/github.com/OpenChirp/framework#Device .
+// ProcessConfigChange is ignored in this case.
 func (d *Device) ProcessConfigChange(ctrl *framework.DeviceControl, cchanges, coriginal map[string]string) (string, bool) {
 	logitem := log.WithField("deviceid", ctrl.Id())
 
 	logitem.Debug("Ignoring Config Change:", cchanges)
 	return "", false
-
-	// If we have processed this config change, we should return the
-	// new service status message and true.
-	//
-	//logitem.Debug("Processing Config Change:", cchanges)
-	//return "Sucessfully updated", true
 }
 
 // ProcessMessage is called upon receiving a pubsub message destined for
 // this device.
-// Along with the standard DeviceControl object, the handler is provided
-// a Message object, which contains the received message's payload,
-// subtopic, and the provided Subscribe key.
 func (d *Device) ProcessMessage(ctrl *framework.DeviceControl, msg framework.Message) {
 	logitem := log.WithField("deviceid", ctrl.Id())
-	logitem.Debugf("Processing Message: %v: [ % #x ]", msg.Key(), msg.Payload())
+	logitem.Debugf("Processing avg for topic %s", msg.Topic())
 
-	if msg.Key().(int) == rawRxKey {
-		d.rawRxCount++
-		subtopic := framework.TransducerPrefix + "/rawrxcount"
-		ctrl.Publish(subtopic, fmt.Sprint(d.rawRxCount))
-	} else if msg.Key().(int) == rawTxKey {
-		d.rawTxCount++
-		subtopic := framework.TransducerPrefix + "/rawtxcount"
-		ctrl.Publish(subtopic, fmt.Sprint(d.rawTxCount))
-	} else {
-		logitem.Errorln("Received unassociated message")
+	index := msg.Key().(int)
+	value, err := strconv.ParseFloat(string(msg.Payload()), 64)
+	if err != nil {
+		logitem.Warnf("Failed to convert message (\"%v\") to float64", string(msg.Payload()))
+		return
 	}
+
+	d.addLastValue(index, value)
+	avg := d.calculateAverage(index)
+
+	logitem.Debugf("newvalue=%.10f | avg=%.10f", value, avg)
+
+	ctrl.Publish(framework.TransducerPrefix+"/"+d.outtopics[index], fmt.Sprintf("%.10f", avg))
 }
 
 // run is the main function that gets called once form main()
@@ -137,7 +162,7 @@ func run(ctx *cli.Context) error {
 	/* Set logging level (verbosity) */
 	log.SetLevel(log.Level(uint32(ctx.Int("log-level"))))
 
-	log.Info("Starting Example Service")
+	log.Info("Starting Math Diff Service")
 
 	/* Start framework service client */
 	c, err := framework.StartServiceClientManaged(
@@ -187,11 +212,11 @@ func run(ctx *cli.Context) error {
 }
 
 func main() {
-	/* Parse arguments and environemtnal variable */
+	/* Parse arguments and environmental variable */
 	app := cli.NewApp()
-	app.Name = "example-service"
+	app.Name = "math-avg-service"
 	app.Usage = ""
-	app.Copyright = "See https://github.com/openchirp/example-service for copyright information"
+	app.Copyright = "See https://github.com/openchirp/math-avg-service for copyright information"
 	app.Version = version
 	app.Action = run
 	app.Flags = []cli.Flag{
