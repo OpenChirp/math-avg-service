@@ -1,7 +1,8 @@
 // Craig Hesling
 // May 25, 2018
 //
-// This is a simple OpenChirp service that output the running diff of the data.
+// This is a simple OpenChirp service that outputs the windoed running average
+// of a data stream.
 package main
 
 import (
