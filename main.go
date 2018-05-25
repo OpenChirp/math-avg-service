@@ -163,7 +163,7 @@ func run(ctx *cli.Context) error {
 	/* Set logging level (verbosity) */
 	log.SetLevel(log.Level(uint32(ctx.Int("log-level"))))
 
-	log.Info("Starting Math Diff Service")
+	log.Info("Starting Math Avg Service")
 
 	/* Start framework service client */
 	c, err := framework.StartServiceClientManaged(
