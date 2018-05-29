@@ -3,10 +3,16 @@
 //
 // This is a simple OpenChirp service that outputs the windoed running average
 // of a data stream.
+//
+// The decision has been made to allow producing startup averages with less than
+// the specified window size, in order to always give the user output.
+// The alternative approach would be to wait to the window to become full
+// before we could generate our first average.
 package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"strconv"
@@ -67,12 +73,20 @@ func (d *Device) addLastValue(topicIndex int, value float64) {
 	d.nextindex[topicIndex] = (nextIndex + 1) % len(d.lastvalues[topicIndex])
 }
 
+// calculateAverage will compute the average of lastvalues avaliable.
+// This means that it may generate a startup average with less values than
+// the specified window size.
 func (d *Device) calculateAverage(topicIndex int) float64 {
+	var count = len(d.lastvalues[topicIndex])
 	var sum float64
 	for _, val := range d.lastvalues[topicIndex] {
+		if math.IsNaN(val) {
+			count--
+			continue
+		}
 		sum += val
 	}
-	return sum / float64(len(d.lastvalues[topicIndex]))
+	return sum / float64(count)
 }
 
 // ProcessLink is called once, during the initial setup of a
@@ -112,6 +126,10 @@ func (d *Device) ProcessLink(ctrl *framework.DeviceControl) string {
 			}
 		}
 		d.lastvalues[i] = make([]float64, winsize)
+		// Initialize to to NaN
+		for vali := range d.lastvalues[i] {
+			d.lastvalues[i][vali] = math.NaN()
+		}
 
 		ctrl.Subscribe(framework.TransducerPrefix+"/"+intopic, i)
 	}
