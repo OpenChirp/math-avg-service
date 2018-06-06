@@ -11,6 +11,6 @@ This service applies a simple sliding window average.
 
 # Design Decision
 The decision has been made to allow producing startup averages with less than
-the specified window size, in order to always give the user output.
-The alternative approach would be to wait to the window to become full
-before we could generate our first average.
+the specified window size in order to always give the user output.
+The alternative approach would have been to wait for the window to become full
+before we could generate our first averaged output.
