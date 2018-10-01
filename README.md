@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/OpenChirp/math-avg-service.svg?branch=master)](https://travis-ci.org/OpenChirp/math-avg-service)
+
 # Math Average OpenChirp Service
 
 ## Overview
