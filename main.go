@@ -11,7 +11,6 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"os"
 	"os/signal"
@@ -20,6 +19,7 @@ import (
 	"syscall"
 
 	"github.com/openchirp/framework"
+	"github.com/openchirp/framework/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -171,9 +171,9 @@ func (d *Device) ProcessMessage(ctrl *framework.DeviceControl, msg framework.Mes
 	d.addLastValue(index, value)
 	avg := d.calculateAverage(index)
 
-	logitem.Debugf("newvalue=%.10f | avg=%.10f", value, avg)
+	logitem.Debugf("newvalue=%s | avg=%s", utils.FormatFloat64(value), utils.FormatFloat64(avg))
 
-	ctrl.Publish(d.outtopics[index], fmt.Sprintf("%.10f", avg))
+	ctrl.Publish(d.outtopics[index], utils.FormatFloat64(avg))
 }
 
 // run is the main function that gets called once form main()
