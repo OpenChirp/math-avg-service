@@ -6,10 +6,12 @@
 This service applies a simple sliding window average.
 
 # Service Config
-* `InputTopics` - Required - Comma separated list of input topics
-* `OutputTopics` - Optional - Comma separated list of corresponding output topics
-* `WindowSizes` - Optional - Comma separated list of corresponding window sizes
-  (in number of samples)
+| Key Name | Key Description | Key Example | Is Required? |
+| - | - | - | - |
+| `InputTopics` | Comma separated list of input topics | temp,frequency | Required |
+| `OutputTopics` | Comma separated list of corresponding output topics | temp_avg, frequency_avg | Optional |
+| `WindowSizes` | Comma separated list of corresponding window sizes | 2, 4 | Optional |
+  (in number of samples) | Optional |
 
 # Design Decision
 The decision has been made to allow producing startup averages with less than
